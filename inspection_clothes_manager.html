@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>検査着 洗濯管理</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f3; color: #1a1a1a; }
+  .app { padding: 1.5rem 1rem 3rem; max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #888; margin-bottom: 1rem; }
+
+  /* ストレージ警告バナー */
+  .storage-warn {
+    background: #FFF3CD; border: 1px solid #FBBF24; color: #78350F;
+    border-radius: 8px; padding: 10px 14px; font-size: 13px;
+    margin-bottom: 1rem; line-height: 1.6; display: none;
+  }
+  .storage-warn.show { display: block; }
+
+  .alert { border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-bottom: 1rem; display: none; }
+  .alert.show { display: block; }
+  .alert-ok   { background: #EAF3DE; border: 1px solid #C0DD97; color: #27500A; }
+  .alert-warn { background: #FAEEDA; border: 1px solid #FAC775; color: #633806; }
+  .alert-over { background: #FCEBEB; border: 1px solid #F7C1C1; color: #501313; }
+
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1rem; }
+  .metric { background: #ebebea; border-radius: 8px; padding: 12px 14px; }
+  .metric-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .metric-value { font-size: 26px; font-weight: 600; }
+  .metric-sub { font-size: 12px; color: #888; margin-top: 2px; }
+  .prog-wrap { height: 8px; background: #d5d5d3; border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  .prog-bar { height: 100%; border-radius: 4px; transition: width .3s, background .3s; }
+
+  .card { background: #fff; border: 1px solid #e0e0de; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  .sec-label { font-size: 12px; font-weight: 600; color: #888; letter-spacing: .06em; margin-bottom: 12px; }
+
+  .day-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .day-cell { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .day-name { font-size: 13px; color: #666; }
+  .day-input {
+    width: 100%; text-align: center; font-size: 22px; font-weight: 600;
+    padding: 12px 4px; border: 1px solid #ddd; border-radius: 8px;
+    background: #fafafa; outline: none;
+    /* スマホでフォーカス時のズーム防止 */
+    font-size: 16px;
+  }
+  /* 数値の見た目は大きく保つ */
+  @media (min-width: 360px) {
+    .day-input { font-size: 20px; }
+  }
+  .day-input:focus { border-color: #888; background: #fff; }
+
+  .total-row { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px solid #eee; padding-top: 12px; }
+  .total-label { font-size: 14px; color: #888; }
+  .total-num { font-size: 28px; font-weight: 600; }
+
+  .reset-btn {
+    width: 100%; padding: 16px; font-size: 16px; font-weight: 600;
+    background: #1a1a1a; color: #fff; border: none; border-radius: 8px;
+    cursor: pointer; margin-bottom: 1.5rem;
+    /* タップしやすいサイズ確保 */
+    min-height: 52px;
+  }
+  .reset-btn:active { opacity: .7; }
+
+  /* 保存状態インジケーター */
+  .save-status {
+    text-align: center; font-size: 12px; color: #aaa; margin-top: -1rem; margin-bottom: 1rem;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>検査着 洗濯管理</h1>
+  <p class="sub">曜日別に枚数を入力して週合計を管理します（上限 85枚）</p>
+
+  <!-- ストレージ非対応時の警告 -->
+  <div id="storage-warn" class="storage-warn">
+    ⚠️ このブラウザ環境ではデータの自動保存ができません。<br>
+    アプリを閉じると入力内容がリセットされます。<br>
+    <strong>Safariをお使いの場合は「プライベートブラウズ」をオフにしてください。</strong>
+  </div>
+
+  <div id="a-ok"   class="alert alert-ok"></div>
+  <div id="a-warn" class="alert alert-warn"></div>
+  <div id="a-over" class="alert alert-over"></div>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">今週 合計枚数</div>
+      <div class="metric-value" id="m-total">0</div>
+      <div class="prog-wrap"><div class="prog-bar" id="prog" style="width:0%;background:#639922;"></div></div>
+      <div class="metric-sub">上限 85枚</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">先週 出した枚数</div>
+      <div class="metric-value" id="m-return">—</div>
+      <div class="metric-sub" id="m-return-sub">記録なし</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="sec-label">今週 曜日別 枚数入力</div>
+    <div class="day-grid">
+      <div class="day-cell"><span class="day-name">月曜日</span><input type="number" inputmode="numeric" pattern="[0-9]*" class="day-input" id="d0" min="0" max="999"></div>
+      <div class="day-cell"><span class="day-name">火曜日</span><input type="number" inputmode="numeric" pattern="[0-9]*" class="day-input" id="d1" min="0" max="999"></div>
+      <div class="day-cell"><span class="day-name">水曜日</span><input type="number" inputmode="numeric" pattern="[0-9]*" class="day-input" id="d2" min="0" max="999"></div>
+      <div class="day-cell"><span class="day-name">木曜日</span><input type="number" inputmode="numeric" pattern="[0-9]*" class="day-input" id="d3" min="0" max="999"></div>
+      <div class="day-cell"><span class="day-name">金曜日</span><input type="number" inputmode="numeric" pattern="[0-9]*" class="day-input" id="d4" min="0" max="999"></div>
+      <div class="day-cell"><span class="day-name">日曜日</span><input type="number" inputmode="numeric" pattern="[0-9]*" class="day-input" id="d5" min="0" max="999"></div>
+    </div>
+    <div class="total-row">
+      <span class="total-label">合計</span>
+      <span class="total-num"><span id="total-disp">0</span> 枚</span>
+    </div>
+  </div>
+
+  <button class="reset-btn" id="reset-btn">今週分を確定してリセット</button>
+  <div class="save-status" id="save-status"></div>
+</div>
+
+<script>
+(function(){
+  var LIMIT = 85, WARN = 80;
+
+  // ── localStorage 可否チェック ──────────────────
+  var storageOK = false;
+  try {
+    var testKey = '__ck_test__';
+    localStorage.setItem(testKey, '1');
+    localStorage.removeItem(testKey);
+    storageOK = true;
+  } catch(e) {
+    storageOK = false;
+  }
+
+  if (!storageOK) {
+    document.getElementById('storage-warn').classList.add('show');
+  }
+
+  // ── データ読み込み ──────────────────────────────
+  var qtys = [0,0,0,0,0,0];
+  var lastWeek = null;
+
+  function loadData() {
+    if (!storageOK) return;
+    try {
+      var s = localStorage.getItem('ck_qtys');
+      if (s) qtys = JSON.parse(s);
+      var l = localStorage.getItem('ck_last');
+      if (l) lastWeek = JSON.parse(l);
+    } catch(e) {}
+  }
+
+  function saveData() {
+    if (!storageOK) {
+      document.getElementById('save-status').textContent = '⚠ 保存できません（ブラウザの設定をご確認ください）';
+      return;
+    }
+    try {
+      localStorage.setItem('ck_qtys', JSON.stringify(qtys));
+      localStorage.setItem('ck_last', JSON.stringify(lastWeek));
+      var now = new Date();
+      var hm = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
+      document.getElementById('save-status').textContent = '✓ ' + hm + ' に保存されました';
+    } catch(e) {
+      document.getElementById('save-status').textContent = '⚠ 保存に失敗しました';
+    }
+  }
+
+  loadData();
+
+  // ── 入力欄セットアップ ──────────────────────────
+  var inputs = [];
+  for (var i = 0; i < 6; i++) {
+    inputs.push(document.getElementById('d' + i));
+  }
+  for (var i = 0; i < inputs.length; i++) {
+    inputs[i].value = qtys[i] || '';
+    (function(idx){
+      inputs[idx].addEventListener('input', function(){
+        qtys[idx] = parseInt(this.value) || 0;
+        updateTotal();
+      });
+    })(i);
+  }
+
+  // ── 合計・UI更新 ──────────────────────────────
+  function total() {
+    var s = 0;
+    for (var i = 0; i < qtys.length; i++) s += qtys[i];
+    return s;
+  }
+
+  function updateTotal() {
+    var t = total();
+    document.getElementById('total-disp').textContent = t;
+    document.getElementById('m-total').textContent    = t;
+
+    var pct = Math.min(t / LIMIT * 100, 100);
+    var bar = document.getElementById('prog');
+    bar.style.width      = pct + '%';
+    bar.style.background = t > LIMIT ? '#E24B4A' : t > WARN ? '#EF9F27' : '#639922';
+
+    var aOk   = document.getElementById('a-ok');
+    var aWarn = document.getElementById('a-warn');
+    var aOver = document.getElementById('a-over');
+    aOk.className   = 'alert alert-ok'   + (t > 0 && t <= WARN    ? ' show' : '');
+    aWarn.className = 'alert alert-warn' + (t > WARN && t <= LIMIT ? ' show' : '');
+    aOver.className = 'alert alert-over' + (t > LIMIT              ? ' show' : '');
+    aOk.textContent   = '問題ありません（残り ' + (LIMIT - t) + ' 枚）';
+    aWarn.textContent = '注意：上限まであと ' + (LIMIT - t) + ' 枚です';
+    aOver.textContent = '上限超過！ ' + (t - LIMIT) + ' 枚オーバーしています';
+
+    saveData();
+  }
+
+  function renderLastWeek() {
+    if (lastWeek !== null) {
+      document.getElementById('m-return').textContent     = lastWeek + ' 枚';
+      document.getElementById('m-return-sub').textContent = '先週の合計';
+    } else {
+      document.getElementById('m-return').textContent     = '—';
+      document.getElementById('m-return-sub').textContent = '記録なし';
+    }
+  }
+
+  // ── リセットボタン ──────────────────────────────
+  document.getElementById('reset-btn').addEventListener('click', function(){
+    var t = total();
+    if (t === 0) { alert('枚数を入力してください'); return; }
+    if (!confirm('今週の合計 ' + t + ' 枚を記録して、入力をリセットします。よろしいですか？')) return;
+
+    lastWeek = t;
+    qtys = [0,0,0,0,0,0];
+    saveData();
+    for (var i = 0; i < inputs.length; i++) inputs[i].value = '';
+    renderLastWeek();
+    document.getElementById('a-ok').className    = 'alert alert-ok';
+    document.getElementById('a-warn').className  = 'alert alert-warn';
+    document.getElementById('a-over').className  = 'alert alert-over';
+    document.getElementById('total-disp').textContent = '0';
+    document.getElementById('m-total').textContent    = '0';
+    document.getElementById('prog').style.width       = '0%';
+    document.getElementById('prog').style.background  = '#639922';
+  });
+
+  updateTotal();
+  renderLastWeek();
+})();
+</script>
+</body>
+</html>
